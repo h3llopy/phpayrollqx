@@ -3,142 +3,129 @@ import pandas as pd
 from datetime import datetime
 
 # =============================================
-# PHILIPPINE PAYROLL CALCULATIONS (UPDATED 2024)
+# 2025 PHILIPPINE CONTRIBUTION CALCULATIONS
 # =============================================
 
 def calculate_sss(salary):
-    """SSS Contribution Table 2024 (Updated Rates)"""
-    brackets = [
-        (4250, 180), (4750, 202.50), (5250, 225), (5750, 247.50),
-        (6250, 270), (6750, 292.50), (7250, 315), (7750, 337.50),
-        (8250, 360), (8750, 382.50), (9250, 405), (9750, 427.50),
-        (10250, 450), (10750, 472.50), (11250, 495), (11750, 517.50),
-        (12250, 540), (12750, 562.50), (13250, 585), (13750, 607.50),
-        (14250, 630), (14750, 652.50), (15250, 675), (15750, 697.50),
-        (16250, 720), (16750, 742.50), (17250, 765), (17750, 787.50),
-        (18250, 810), (18750, 832.50), (19250, 855), (19750, 877.50),
-        (20250, 900), (20750, 922.50), (21250, 945), (21750, 967.50),
-        (22250, 990), (22750, 1012.50), (23250, 1035), (23750, 1057.50),
-        (24250, 1080), (24750, 1102.50), (float('inf'), 1125)
-    ]
-    for bracket, contribution in brackets:
-        if salary <= bracket:
-            return contribution
+    """SSS Contribution Table 2025 (Updated Jan 2025)"""
+    # Employee share: 4.5% of salary, Employer: 9.5%
+    employee_share = min(salary * 0.045, 1350)  # Max ₱1,350
+    employer_share = min(salary * 0.095, 2850)  # Max ₱2,850
+    return {"employee": round(employee_share, 2), "employer": round(employer_share, 2)}
 
 def calculate_philhealth(salary):
-    """PhilHealth Contribution 2024 (4% of monthly salary)"""
-    return min(max(salary * 0.04, 400), 3200)  # Min 400, Max 3200
+    """PhilHealth Contribution 2025 (Updated Jan 2025)"""
+    # Employee/Employer split: 50/50
+    if salary <= 10000:
+        total = 400  # Min ₱400
+    elif salary <= 80000:
+        total = salary * 0.04  # 4% of salary
+    else:
+        total = 3200  # Max ₱3,200
+    share = round(total / 2, 2)
+    return {"employee": share, "employer": share}
 
 def calculate_pagibig(salary):
-    """Pag-IBIG Contribution 2024"""
-    return 100 if salary > 5000 else salary * 0.02
+    """Pag-IBIG Contribution 2025 (Updated Jan 2025)"""
+    # Employee share: 1-2%, Employer: 2%
+    if salary > 5000:
+        employee_share = 100  # Fixed ₱100
+    else:
+        employee_share = salary * 0.01 if salary <= 1500 else salary * 0.02
+    employer_share = salary * 0.02 if salary <= 1500 else 100
+    return {"employee": employee_share, "employer": employer_share}
 
 def calculate_bir_tax(salary, status="Single"):
-    """BIR Withholding Tax Table 2024"""
+    """BIR Withholding Tax Table 2025 (Effective Jan 2025)"""
     if status == "Single":
-        if salary <= 20833: return 0
-        elif salary <= 33333: return (salary - 20833) * 0.15
-        elif salary <= 66667: return 1875 + (salary - 33333) * 0.20
-        elif salary <= 166667: return 8541.80 + (salary - 66667) * 0.25
-        elif salary <= 666667: return 33541.80 + (salary - 166667) * 0.30
-        else: return 183541.80 + (salary - 666667) * 0.35
-    # Add other statuses if needed
+        if salary <= 25000: return 0
+        elif salary <= 40000: return (salary - 25000) * 0.15
+        elif salary <= 80000: return 2250 + (salary - 40000) * 0.20
+        elif salary <= 180000: return 10250 + (salary - 80000) * 0.25
+        elif salary <= 700000: return 35250 + (salary - 180000) * 0.30
+        else: return 202250 + (salary - 700000) * 0.35
+    # Add other statuses as needed
 
 # =============================================
-# STREAMLIT APP WITH ERROR HANDLING
+# STREAMLIT APPLICATION
 # =============================================
 
 def main():
-    st.set_page_config(page_title="PH Payroll System", layout="wide")
-    st.title("🇵🇭 Philippine Payroll Calculator")
+    st.set_page_config(page_title="2025 PH Payroll System", layout="wide")
+    st.title("🇵🇭 2025 Philippine Payroll Calculator")
     
-    # File uploader
+    with st.expander("ℹ️ Current 2025 Contribution Rates"):
+        st.markdown("""
+        **SSS (Monthly):**
+        - Employee: 4.5% of salary (max ₱1,350)
+        - Employer: 9.5% of salary (max ₱2,850)
+        
+        **PhilHealth:**
+        - Total: 4% of salary (min ₱400, max ₱3,200)
+        - Split 50/50 between employee/employer
+        
+        **Pag-IBIG:**
+        - Employee: 1-2% (₱100 if salary >₱5,000)
+        - Employer: 2% (₱100 if salary >₱1,500)
+        """)
+    
     uploaded_file = st.file_uploader("Upload Employee Data (Excel)", type=["xlsx"])
     
     if uploaded_file:
         try:
-            # Read Excel file
             df = pd.read_excel(uploaded_file, engine='openpyxl')
-            
-            # Standardize column names
             df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
             
             # Check required columns
             required_cols = {'employee_id', 'full_name', 'basic_salary', 'tax_status'}
-            missing_cols = required_cols - set(df.columns)
-            
-            if missing_cols:
-                st.error(f"Missing required columns: {', '.join(missing_cols)}")
-                st.write("Available columns:", df.columns.tolist())
+            if missing := required_cols - set(df.columns):
+                st.error(f"Missing columns: {', '.join(missing)}")
                 return
             
-            # Calculate payroll
-            try:
-                # Basic calculations
-                df['overtime_pay'] = df.get('overtime_hours', 0) * (df['basic_salary']/22/8 * 1.25)
-                df['late_deduction'] = (df.get('late_minutes', 0)/60) * (df['basic_salary']/22/8)
-                
-                # Gross salary
-                df['gross_salary'] = df['basic_salary'] + df['overtime_pay'] - df['late_deduction']
-                
-                # Government contributions
-                df['sss'] = df['basic_salary'].apply(calculate_sss)
-                df['philhealth'] = df['basic_salary'].apply(calculate_philhealth)
-                df['pagibig'] = df['basic_salary'].apply(calculate_pagibig)
-                
-                # Tax calculation
-                df['tax'] = df.apply(
-                    lambda row: calculate_bir_tax(row['gross_salary'], row['tax_status']), 
-                    axis=1
-                )
-                
-                # Net salary
-                df['net_salary'] = df['gross_salary'] - df['sss'] - df['philhealth'] - df['pagibig'] - df['tax']
-                
-                # 13th month pay
-                df['13th_month_pay'] = df['basic_salary'] / 12
-                
-                # Display results
-                st.success("Payroll computed successfully!")
-                st.dataframe(df)
-                
-                # Export to CSV
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Download Payroll Data (CSV)",
-                    data=csv,
-                    file_name=f"ph_payroll_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime='text/csv'
-                )
-                
-            except Exception as calc_error:
-                st.error(f"Calculation error: {str(calc_error)}")
-                
-        except Exception as file_error:
-            st.error(f"Error reading file: {str(file_error)}")
-
-    # Sample template download
-    with st.expander("Need a template?"):
-        sample_data = {
-            "employee_id": ["EMP-001", "EMP-002"],
-            "full_name": ["Juan Dela Cruz", "Maria Santos"],
-            "basic_salary": [25000, 35000],
-            "tax_status": ["Single", "Married"],
-            "sss_number": ["12-3456789-0", "98-7654321-0"],
-            "philhealth_number": ["123456789012", "987654321098"],
-            "pagibig_number": ["1234-5678-9012", "9876-5432-1098"],
-            "days_worked": [22, 20],
-            "overtime_hours": [5, 2],
-            "late_minutes": [30, 15],
-            "allowances": [1000, 1500]
-        }
-        sample_df = pd.DataFrame(sample_data)
-        st.download_button(
-            label="Download Sample Template",
-            data=sample_df.to_csv(index=False),
-            file_name="ph_payroll_template.csv",
-            mime='text/csv'
-        )
+            # Calculate contributions
+            df['sss'] = df['basic_salary'].apply(lambda x: calculate_sss(x)['employee'])
+            df['sss_employer'] = df['basic_salary'].apply(lambda x: calculate_sss(x)['employer'])
+            
+            df['philhealth'] = df['basic_salary'].apply(lambda x: calculate_philhealth(x)['employee'])
+            df['philhealth_employer'] = df['basic_salary'].apply(lambda x: calculate_philhealth(x)['employer'])
+            
+            df['pagibig'] = df['basic_salary'].apply(lambda x: calculate_pagibig(x)['employee'])
+            df['pagibig_employer'] = df['basic_salary'].apply(lambda x: calculate_pagibig(x)['employer'])
+            
+            # Calculate taxes and net pay
+            df['tax'] = df.apply(lambda r: calculate_bir_tax(r['basic_salary'], r['tax_status']), axis=1)
+            df['total_deductions'] = df['sss'] + df['philhealth'] + df['pagibig'] + df['tax']
+            df['net_pay'] = df['basic_salary'] - df['total_deductions']
+            
+            # Employer costs
+            df['total_employer_cost'] = (df['basic_salary'] + df['sss_employer'] + 
+                                       df['philhealth_employer'] + df['pagibig_employer'])
+            
+            # Display results
+            st.success("2025 Payroll Computed Successfully!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Employee Deductions", f"₱{df['total_deductions'].sum():,.2f}")
+            with col2:
+                st.metric("Total Employer Cost", f"₱{df['total_employer_cost'].sum():,.2f}")
+            
+            st.dataframe(df.style.format({
+                'basic_salary': '₱{:,.2f}',
+                'net_pay': '₱{:,.2f}',
+                'total_employer_cost': '₱{:,.2f}'
+            }))
+            
+            # Export options
+            st.download_button(
+                label="Download Full Report (CSV)",
+                data=df.to_csv(index=False),
+                file_name=f"ph_payroll_2025_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime='text/csv'
+            )
+            
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
 
 if __name__ == "__main__":
     main()
