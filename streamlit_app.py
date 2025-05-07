@@ -81,10 +81,12 @@ def calculate_bir_tax(annual_taxable):
 def process_payroll(df):
     """Process payroll for all employees"""
     results = []
-    working_days = 22  # Standard working days per month
+    working_days_per_year = 313  # DOLE standard working days per year
+    working_days_per_month = working_days_per_year / 12  # 26.08 days per month
+    max_monthly_days = 22  # Cap for monthly salary calculation
     
     # Fill NaN values with 0 for numeric columns
-    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes', 'Dependents']
+    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes']
     df[numeric_cols] = df[numeric_cols].fillna(0)
     
     for _, row in df.iterrows():
@@ -92,14 +94,13 @@ def process_payroll(df):
             # Basic info
             basic = float(row.get('basic_salary', 0))
             allowances = float(row.get('allowances', 0))
-            days_worked = float(row.get('days_worked', 22))
+            days_worked = min(float(row.get('days_worked', 22)), max_monthly_days)  # Cap at 22
             overtime_hours = float(row.get('overtime_hours', 0))
             late_minutes = float(row.get('late_minutes', 0))
-            deps = min(int(float(row.get('Dependents', 0))), 4)  # Convert to int after handling NaN
             
-            # Calculate daily rate and adjustments
-            daily_rate = basic / working_days
-            adjusted_basic = basic * (days_worked / working_days)
+            # Calculate daily rate using DOLE standard
+            daily_rate = basic / working_days_per_month
+            adjusted_basic = basic  # Monthly salary, not scaled by days worked
             
             # Overtime pay
             hourly_rate = daily_rate / 8
@@ -124,7 +125,7 @@ def process_payroll(df):
             
             # Withholding tax
             annual_taxable = taxable * 12
-            deductions = 90000 + (25000 * deps)  # Standard + dependent deductions
+            deductions = 90000  # Standard deduction only
             annual_net_taxable = max(annual_taxable - deductions, 0)
             annual_tax = calculate_bir_tax(annual_net_taxable)
             monthly_tax = annual_tax / 12
@@ -139,21 +140,21 @@ def process_payroll(df):
             
             results.append({
                 **row.to_dict(),
-                'Overtime Pay': overtime_pay,
-                'Late Deduction': late_deduction,
-                'Gross Salary': gross,
+                'Overtime Pay': round(overtime_pay, 2),
+                'Late Deduction': round(late_deduction, 2),
+                'Gross Salary': round(gross, 2),
                 'SSS Employee': sss['employee_share'],
                 'SSS Employer': sss['employer_share'],
                 'PhilHealth Employee': philhealth['employee_share'],
                 'PhilHealth Employer': philhealth['employer_share'],
                 'PagIBIG Employee': pagibig['employee_share'],
                 'PagIBIG Employer': pagibig['employer_share'],
-                'Taxable Income': taxable,
-                'Withholding Tax': monthly_tax,
-                'Total Deductions': total_deductions,
-                'Net Pay': net_pay,
-                'Employer Cost': employer_cost,
-                '13th Month Pay': thirteenth_month
+                'Taxable Income': round(taxable, 2),
+                'Withholding Tax': round(monthly_tax, 2),
+                'Total Deductions': round(total_deductions, 2),
+                'Net Pay': round(net_pay, 2),
+                'Employer Cost': round(employer_cost, 2),
+                '13th Month Pay': round(thirteenth_month, 2)
             })
             
         except Exception as e:
@@ -174,9 +175,7 @@ def generate_template():
         'allowances': [5000, 8000],
         'days_worked': [22, 22],
         'overtime_hours': [0, 0],
-        'late_minutes': [0, 0],
-        'Dependents': [1, 2],
-        'Tax Status': ['Single', 'Married']
+        'late_minutes': [0, 0]
     }
     df = pd.DataFrame(template_data)
     
@@ -188,7 +187,7 @@ def generate_template():
         ws.append(['Required Fields:'])
         ws.append(['- employee_id', '- full_name', '- basic_salary (numeric)'])
         ws.append(['- allowances (numeric)', '- days_worked (numeric)', '- overtime_hours (numeric)'])
-        ws.append(['- late_minutes (numeric)', '- Dependents (0-4)', '- Tax Status'])
+        ws.append(['- late_minutes (numeric)'])
     return output.getvalue()
 
 def main():
