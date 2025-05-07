@@ -4,46 +4,33 @@ from datetime import datetime
 import io
 
 # =============================================
-# 2023 GOVERNMENT CONTRIBUTION CALCULATORS
+# 2025 GOVERNMENT CONTRIBUTION CALCULATORS
 # =============================================
 
 def calculate_sss(basic_salary):
-    """Compute SSS contributions (2023 rates)"""
+    """Compute SSS contributions (2025 rates: 15% total, 5% employee share)"""
     try:
         basic_salary = float(basic_salary)
-        msc_brackets = [
-            3250, 3750, 4250, 4750, 5250, 5750, 6250, 6750, 7250, 7750,
-            8250, 8750, 9250, 9750, 10250, 10750, 11250, 11750, 12250, 12750,
-            13250, 13750, 14250, 14750, 15250, 15750, 16250, 16750, 17250, 17750,
-            18250, 18750, 19250, 19750, 20250, 20750, 21250, 21750, 22250, 22750,
-            23250, 23750, 24250, 24750, 25000
-        ]
+        msc = min(max(basic_salary, 5000), 35000)  # Min 5,000, Max 35,000
         
-        msc = min((b for b in msc_brackets if b >= basic_salary), default=25000)
-        
-        employee_share = round(msc * 0.045, 2)  # 4.5%
-        employer_share = round(msc * 0.095, 2)  # 9.5%
-        ec = 10.00 if msc <= 15000 else 30.00   # Employees' Compensation
+        employee_share = round(msc * 0.05, 2)  # 5%
+        employer_share = round(msc * 0.10, 2)  # 10% (includes EC)
         
         return {
             "employee_share": employee_share,
-            "employer_share": employer_share + ec,
-            "total": employee_share + employer_share + ec,
+            "employer_share": employer_share,
+            "total": employee_share + employer_share,
             "msc": msc
         }
     except:
         return {"employee_share": 0, "employer_share": 0, "total": 0, "msc": 0}
 
 def calculate_philhealth(salary):
-    """PhilHealth 2023 contributions (3% total, split 50/50)"""
+    """PhilHealth 2025 contributions (5% total, split 50/50, min 500, max 2500)"""
     try:
         salary = float(salary)
-        if salary <= 10000:
-            total = 400.00
-        elif salary <= 80000:
-            total = salary * 0.03
-        else:
-            total = 2400.00
+        total = salary * 0.05
+        total = max(min(total, 2500), 500)  # Min 500, Max 2500
         share = round(total / 2, 2)
         return {
             "employee_share": share,
@@ -54,11 +41,12 @@ def calculate_philhealth(salary):
         return {"employee_share": 0, "employer_share": 0, "total": 0}
 
 def calculate_pagibig(salary):
-    """Pag-IBIG 2023 contributions"""
+    """Pag-IBIG 2025 contributions (2% each, max compensation 10,000)"""
     try:
         salary = float(salary)
-        employee_share = min(salary * 0.02, 100.00)
-        employer_share = 100.00 if salary >= 5000 else salary * 0.02
+        capped_salary = min(salary, 10000)  # Max compensation 10,000
+        employee_share = min(capped_salary * 0.02, 200.00)  # Max 200
+        employer_share = min(capped_salary * 0.02, 200.00)  # Max 200
         return {
             "employee_share": employee_share,
             "employer_share": employer_share,
@@ -68,7 +56,7 @@ def calculate_pagibig(salary):
         return {"employee_share": 0, "employer_share": 0, "total": 0}
 
 def calculate_bir_tax(annual_taxable):
-    """2023 Unified BIR Withholding Tax Table"""
+    """2023 BIR Withholding Tax Table (Note: Adjust for 2025 if rates change)"""
     try:
         annual_taxable = float(annual_taxable)
         if annual_taxable <= 250000:
@@ -93,21 +81,38 @@ def calculate_bir_tax(annual_taxable):
 def process_payroll(df):
     """Process payroll for all employees"""
     results = []
+    working_days = 22  # Standard working days per month
     
     for _, row in df.iterrows():
         try:
             # Basic info
-            basic = float(row.get('Basic Salary', 0))
-            allowances = float(row.get('Allowances', 0))
+            basic = float(row.get('basic_salary', 0))
+            allowances = float(row.get('allowances', 0))
+            days_worked = float(row.get('days_worked', 22))
+            overtime_hours = float(row.get('overtime_hours', 0))
+            late_minutes = float(row.get('late_minutes', 0))
             deps = min(int(row.get('Dependents', 0)), 4)
             
+            # Calculate daily rate and adjustments
+            daily_rate = basic / working_days
+            adjusted_basic = basic * (days_worked / working_days)
+            
+            # Overtime pay
+            hourly_rate = daily_rate / 8
+            overtime_rate = hourly_rate * 1.25
+            overtime_pay = overtime_rate * overtime_hours
+            
+            # Late deduction
+            minute_rate = hourly_rate / 60
+            late_deduction = minute_rate * late_minutes
+            
             # Gross pay
-            gross = basic + allowances
+            gross = adjusted_basic + allowances + overtime_pay - late_deduction
             
             # Government contributions
             sss = calculate_sss(basic)
-            philhealth = calculate_philhealth(gross)
-            pagibig = calculate_pagibig(gross)
+            philhealth = calculate_philhealth(basic)
+            pagibig = calculate_pagibig(basic)
             
             # Taxable income
             nontaxable = sss['employee_share'] + philhealth['employee_share'] + pagibig['employee_share']
@@ -125,8 +130,13 @@ def process_payroll(df):
             net_pay = gross - total_deductions
             employer_cost = gross + sss['employer_share'] + philhealth['employer_share'] + pagibig['employer_share']
             
+            # 13th month pay (monthly equivalent)
+            thirteenth_month = basic / 12
+            
             results.append({
                 **row.to_dict(),
+                'Overtime Pay': overtime_pay,
+                'Late Deduction': late_deduction,
                 'Gross Salary': gross,
                 'SSS Employee': sss['employee_share'],
                 'SSS Employer': sss['employer_share'],
@@ -138,11 +148,12 @@ def process_payroll(df):
                 'Withholding Tax': monthly_tax,
                 'Total Deductions': total_deductions,
                 'Net Pay': net_pay,
-                'Employer Cost': employer_cost
+                'Employer Cost': employer_cost,
+                '13th Month Pay': thirteenth_month
             })
             
         except Exception as e:
-            st.error(f"Error processing {row.get('Employee ID')}: {str(e)}")
+            st.error(f"Error processing {row.get('employee_id')}: {str(e)}")
     
     return pd.DataFrame(results)
 
@@ -153,10 +164,13 @@ def process_payroll(df):
 def generate_template():
     """Create Excel template for payroll"""
     template_data = {
-        'Employee ID': ['EMP-001', 'EMP-002'],
-        'Full Name': ['Juan Dela Cruz', 'Maria Santos'],
-        'Basic Salary': [25000, 35000],
-        'Allowances': [5000, 8000],
+        'employee_id': ['EMP-001', 'EMP-002'],
+        'full_name': ['Juan Dela Cruz', 'Maria Santos'],
+        'basic_salary': [25000, 35000],
+        'allowances': [5000, 8000],
+        'days_worked': [22, 22],
+        'overtime_hours': [0, 0],
+        'late_minutes': [0, 0],
         'Dependents': [1, 2],
         'Tax Status': ['Single', 'Married']
     }
@@ -168,13 +182,14 @@ def generate_template():
         writer.book.create_sheet('Instructions')
         ws = writer.book['Instructions']
         ws.append(['Required Fields:'])
-        ws.append(['- Employee ID', '- Full Name', '- Basic Salary (numeric)'])
-        ws.append(['- Allowances (numeric)', '- Dependents (0-4)', '- Tax Status'])
+        ws.append(['- employee_id', '- full_name', '- basic_salary (numeric)'])
+        ws.append(['- allowances (numeric)', '- days_worked (numeric)', '- overtime_hours (numeric)'])
+        ws.append(['- late_minutes (numeric)', '- Dependents (0-4)', '- Tax Status'])
     return output.getvalue()
 
 def main():
-    st.set_page_config(page_title="PH Payroll System 2023", layout="wide")
-    st.title("🇵🇭 Philippine Payroll Calculator 2023")
+    st.set_page_config(page_title="PH Payroll System 2025", layout="wide")
+    st.title("🇵🇭 Philippine Payroll Calculator 2025")
     
     # Template download
     with st.expander("📥 Download Excel Template"):
@@ -191,7 +206,7 @@ def main():
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file)
-            required_cols = {'Employee ID', 'Full Name', 'Basic Salary'}
+            required_cols = {'employee_id', 'full_name', 'basic_salary'}
             
             if not required_cols.issubset(df.columns):
                 missing = required_cols - set(df.columns)
