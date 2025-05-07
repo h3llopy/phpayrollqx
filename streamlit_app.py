@@ -3,40 +3,78 @@ import pandas as pd
 from datetime import datetime
 
 # =============================================
-# 2025 PHILIPPINE CONTRIBUTION CALCULATIONS
+# 2025 GOVERNMENT CONTRIBUTION CALCULATORS
 # =============================================
 
-def calculate_sss(salary):
-    """SSS Contribution Table 2025 (Updated Jan 2025)"""
-    # Employee share: 4.5% of salary, Employer: 9.5%
-    employee_share = min(salary * 0.045, 1350)  # Max ₱1,350
-    employer_share = min(salary * 0.095, 2850)  # Max ₱2,850
-    return {"employee": round(employee_share, 2), "employer": round(employer_share, 2)}
+def calculate_sss(msc):
+    """
+    Compute SSS contributions based on Monthly Salary Credit (2025)
+    MSC Range: ₱5,000 to ₱35,000
+    Returns: {employee_share, employer_share, total}
+    """
+    # Validate MSC range
+    msc_brackets = [5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 
+                   13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
+                   21000, 22000, 23000, 24000, 25000, 26000, 27000, 28000,
+                   29000, 30000, 31000, 32000, 33000, 34000, 35000]
+    
+    msc = min(b for b in msc_brackets if b >= msc)  # Round up to nearest bracket
+    
+    # Regular Social Security
+    regular_ss = msc * 0.15  # 15% of MSC
+    employer_ss = regular_ss * (2/3)  # Employer covers 2/3
+    employee_ss = regular_ss * (1/3)  # Employee covers 1/3
+    
+    # Employees' Compensation
+    ec = 10.00 if msc <= 20000 else 30.00
+    
+    # Mandatory Provident Fund (for MSC > 20k)
+    mpf = max(msc - 20000, 0) * 0.05
+    
+    return {
+        "employee_share": round(employee_ss + (mpf/2), 2),
+        "employer_share": round(employer_ss + ec + (mpf/2), 2),
+        "total": round(regular_ss + ec + mpf, 2),
+        "msc": msc
+    }
 
 def calculate_philhealth(salary):
-    """PhilHealth Contribution 2025 (Updated Jan 2025)"""
-    # Employee/Employer split: 50/50
+    """PhilHealth 2025 contributions (4% total, split 50/50)"""
     if salary <= 10000:
-        total = 400  # Min ₱400
+        total = 400.00
     elif salary <= 80000:
-        total = salary * 0.04  # 4% of salary
+        total = salary * 0.04
     else:
-        total = 3200  # Max ₱3,200
+        total = 3200.00
     share = round(total / 2, 2)
-    return {"employee": share, "employer": share}
+    return {
+        "employee_share": share,
+        "employer_share": share,
+        "total": share * 2
+    }
 
 def calculate_pagibig(salary):
-    """Pag-IBIG Contribution 2025 (Updated Jan 2025)"""
-    # Employee share: 1-2%, Employer: 2%
-    if salary > 5000:
-        employee_share = 100  # Fixed ₱100
+    """Pag-IBIG 2025 contributions"""
+    # Employee share
+    if salary <= 1500:
+        employee_share = salary * 0.01
     else:
-        employee_share = salary * 0.01 if salary <= 1500 else salary * 0.02
-    employer_share = salary * 0.02 if salary <= 1500 else 100
-    return {"employee": employee_share, "employer": employer_share}
+        employee_share = min(salary * 0.02, 100.00)
+    
+    # Employer share
+    if salary <= 1500:
+        employer_share = salary * 0.02
+    else:
+        employer_share = 100.00
+    
+    return {
+        "employee_share": employee_share,
+        "employer_share": employer_share,
+        "total": employee_share + employer_share
+    }
 
 def calculate_bir_tax(salary, status="Single"):
-    """BIR Withholding Tax Table 2025 (Effective Jan 2025)"""
+    """BIR Withholding Tax Table 2025"""
     if status == "Single":
         if salary <= 25000: return 0
         elif salary <= 40000: return (salary - 25000) * 0.15
@@ -47,85 +85,103 @@ def calculate_bir_tax(salary, status="Single"):
     # Add other statuses as needed
 
 # =============================================
-# STREAMLIT APPLICATION
+# STREAMLIT PAYROLL APPLICATION
 # =============================================
 
 def main():
     st.set_page_config(page_title="2025 PH Payroll System", layout="wide")
     st.title("🇵🇭 2025 Philippine Payroll Calculator")
     
-    with st.expander("ℹ️ Current 2025 Contribution Rates"):
+    # Contribution rate reference
+    with st.expander("📌 2025 Contribution Rates"):
         st.markdown("""
-        **SSS (Monthly):**
-        - Employee: 4.5% of salary (max ₱1,350)
-        - Employer: 9.5% of salary (max ₱2,850)
+        **SSS (Based on MSC):**
+        - Employee: 1/3 of 15% MSC + MPF (if applicable)
+        - Employer: 2/3 of 15% MSC + EC (P10/P30) + MPF
         
         **PhilHealth:**
         - Total: 4% of salary (min ₱400, max ₱3,200)
         - Split 50/50 between employee/employer
         
         **Pag-IBIG:**
-        - Employee: 1-2% (₱100 if salary >₱5,000)
-        - Employer: 2% (₱100 if salary >₱1,500)
+        - Employee: 1% (≤₱1,500) or 2% (max ₱100)
+        - Employer: 2% (≤₱1,500) or ₱100
         """)
     
-    uploaded_file = st.file_uploader("Upload Employee Data (Excel)", type=["xlsx"])
+    uploaded_file = st.file_uploader("📤 Upload Employee Data (Excel)", type=["xlsx"])
     
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file, engine='openpyxl')
+            
+            # Standardize column names
             df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
             
             # Check required columns
             required_cols = {'employee_id', 'full_name', 'basic_salary', 'tax_status'}
             if missing := required_cols - set(df.columns):
-                st.error(f"Missing columns: {', '.join(missing)}")
+                st.error(f"❌ Missing required columns: {', '.join(missing)}")
+                st.write("ℹ️ Available columns:", df.columns.tolist())
                 return
             
-            # Calculate contributions
-            df['sss'] = df['basic_salary'].apply(lambda x: calculate_sss(x)['employee'])
-            df['sss_employer'] = df['basic_salary'].apply(lambda x: calculate_sss(x)['employer'])
+            # Calculate payroll components
+            results = []
+            for _, row in df.iterrows():
+                salary = row['basic_salary']
+                
+                # Get contributions
+                sss = calculate_sss(salary)
+                philhealth = calculate_philhealth(salary)
+                pagibig = calculate_pagibig(salary)
+                tax = calculate_bir_tax(salary, row['tax_status'])
+                
+                # Compute totals
+                employee_deductions = sss['employee_share'] + philhealth['employee_share'] + pagibig['employee_share'] + tax
+                employer_cost = salary + sss['employer_share'] + philhealth['employer_share'] + pagibig['employer_share']
+                
+                results.append({
+                    **row.to_dict(),
+                    **{'sss_employee': sss['employee_share'], 'sss_employer': sss['employer_share'], 'sss_msc': sss['msc']},
+                    **{'philhealth_employee': philhealth['employee_share'], 'philhealth_employer': philhealth['employer_share']},
+                    **{'pagibig_employee': pagibig['employee_share'], 'pagibig_employer': pagibig['employer_share']},
+                    'tax': tax,
+                    'net_pay': salary - employee_deductions,
+                    'employer_cost': employer_cost
+                })
             
-            df['philhealth'] = df['basic_salary'].apply(lambda x: calculate_philhealth(x)['employee'])
-            df['philhealth_employer'] = df['basic_salary'].apply(lambda x: calculate_philhealth(x)['employer'])
-            
-            df['pagibig'] = df['basic_salary'].apply(lambda x: calculate_pagibig(x)['employee'])
-            df['pagibig_employer'] = df['basic_salary'].apply(lambda x: calculate_pagibig(x)['employer'])
-            
-            # Calculate taxes and net pay
-            df['tax'] = df.apply(lambda r: calculate_bir_tax(r['basic_salary'], r['tax_status']), axis=1)
-            df['total_deductions'] = df['sss'] + df['philhealth'] + df['pagibig'] + df['tax']
-            df['net_pay'] = df['basic_salary'] - df['total_deductions']
-            
-            # Employer costs
-            df['total_employer_cost'] = (df['basic_salary'] + df['sss_employer'] + 
-                                       df['philhealth_employer'] + df['pagibig_employer'])
+            # Create results dataframe
+            results_df = pd.DataFrame(results)
             
             # Display results
-            st.success("2025 Payroll Computed Successfully!")
+            st.success("✅ Payroll computed successfully!")
             
-            col1, col2 = st.columns(2)
+            # Summary stats
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Employee Deductions", f"₱{df['total_deductions'].sum():,.2f}")
+                st.metric("Total Employee Deductions", f"₱{results_df['net_pay'].sum() - results_df['basic_salary'].sum():,.2f}")
             with col2:
-                st.metric("Total Employer Cost", f"₱{df['total_employer_cost'].sum():,.2f}")
+                st.metric("Total Employer Costs", f"₱{results_df['employer_cost'].sum():,.2f}")
+            with col3:
+                st.metric("Average Net Pay", f"₱{results_df['net_pay'].mean():,.2f}")
             
-            st.dataframe(df.style.format({
+            # Detailed view
+            st.dataframe(results_df.style.format({
                 'basic_salary': '₱{:,.2f}',
                 'net_pay': '₱{:,.2f}',
-                'total_employer_cost': '₱{:,.2f}'
+                'employer_cost': '₱{:,.2f}'
             }))
             
             # Export options
+            csv = results_df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="Download Full Report (CSV)",
-                data=df.to_csv(index=False),
+                label="💾 Download Full Payroll Data (CSV)",
+                data=csv,
                 file_name=f"ph_payroll_2025_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime='text/csv'
             )
             
         except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
+            st.error(f"⚠️ Error processing file: {str(e)}")
 
 if __name__ == "__main__":
     main()
