@@ -83,6 +83,10 @@ def process_payroll(df):
     results = []
     working_days = 22  # Standard working days per month
     
+    # Fill NaN values with 0 for numeric columns
+    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes', 'Dependents']
+    df[numeric_cols] = df[numeric_cols].fillna(0)
+    
     for _, row in df.iterrows():
         try:
             # Basic info
@@ -91,7 +95,7 @@ def process_payroll(df):
             days_worked = float(row.get('days_worked', 22))
             overtime_hours = float(row.get('overtime_hours', 0))
             late_minutes = float(row.get('late_minutes', 0))
-            deps = min(int(row.get('Dependents', 0)), 4)
+            deps = min(int(float(row.get('Dependents', 0))), 4)  # Convert to int after handling NaN
             
             # Calculate daily rate and adjustments
             daily_rate = basic / working_days
