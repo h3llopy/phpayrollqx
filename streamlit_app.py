@@ -86,7 +86,7 @@ def process_payroll(df):
     max_monthly_days = 22  # Cap for monthly salary calculation
     
     # Fill NaN values with 0 for numeric columns
-    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes']
+    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes', 'absent_days', 'leave_with_pay_days', 'loans']
     df[numeric_cols] = df[numeric_cols].fillna(0)
     
     for _, row in df.iterrows():
@@ -97,10 +97,16 @@ def process_payroll(df):
             days_worked = min(float(row.get('days_worked', 22)), max_monthly_days)  # Cap at 22
             overtime_hours = float(row.get('overtime_hours', 0))
             late_minutes = float(row.get('late_minutes', 0))
+            absent_days = float(row.get('absent_days', 0))
+            leave_with_pay_days = float(row.get('leave_with_pay_days', 0))
+            loans = float(row.get('loans', 0))
             
             # Calculate daily rate using DOLE standard
             daily_rate = basic / working_days_per_month
             adjusted_basic = basic  # Monthly salary, not scaled by days worked
+            
+            # Absent deduction
+            absent_deduction = daily_rate * absent_days
             
             # Overtime pay
             hourly_rate = daily_rate / 8
@@ -111,8 +117,8 @@ def process_payroll(df):
             minute_rate = hourly_rate / 60
             late_deduction = minute_rate * late_minutes
             
-            # Gross pay
-            gross = adjusted_basic + allowances + overtime_pay - late_deduction
+            # Gross pay (adjusted for absent days, leave with pay does not deduct)
+            gross = adjusted_basic + allowances + overtime_pay - late_deduction - absent_deduction
             
             # Government contributions
             sss = calculate_sss(basic)
@@ -131,7 +137,7 @@ def process_payroll(df):
             monthly_tax = annual_tax / 12
             
             # Net pay and employer cost
-            total_deductions = nontaxable + monthly_tax
+            total_deductions = nontaxable + monthly_tax + loans
             net_pay = gross - total_deductions
             employer_cost = gross + sss['employer_share'] + philhealth['employer_share'] + pagibig['employer_share']
             
@@ -142,6 +148,7 @@ def process_payroll(df):
                 **row.to_dict(),
                 'Overtime Pay': round(overtime_pay, 2),
                 'Late Deduction': round(late_deduction, 2),
+                'Absent Deduction': round(absent_deduction, 2),
                 'Gross Salary': round(gross, 2),
                 'SSS Employee': sss['employee_share'],
                 'SSS Employer': sss['employer_share'],
@@ -152,6 +159,7 @@ def process_payroll(df):
                 'Taxable Income': round(taxable, 2),
                 'Withholding Tax': round(monthly_tax, 2),
                 'Total Deductions': round(total_deductions, 2),
+                'Loans': round(loans, 2),
                 'Net Pay': round(net_pay, 2),
                 'Employer Cost': round(employer_cost, 2),
                 '13th Month Pay': round(thirteenth_month, 2)
@@ -175,7 +183,10 @@ def generate_template():
         'allowances': [5000, 8000],
         'days_worked': [22, 22],
         'overtime_hours': [0, 0],
-        'late_minutes': [0, 0]
+        'late_minutes': [0, 0],
+        'absent_days': [0, 0],
+        'leave_with_pay_days': [0, 0],
+        'loans': [0, 0]
     }
     df = pd.DataFrame(template_data)
     
@@ -187,7 +198,8 @@ def generate_template():
         ws.append(['Required Fields:'])
         ws.append(['- employee_id', '- full_name', '- basic_salary (numeric)'])
         ws.append(['- allowances (numeric)', '- days_worked (numeric)', '- overtime_hours (numeric)'])
-        ws.append(['- late_minutes (numeric)'])
+        ws.append(['- late_minutes (numeric)', '- absent_days (numeric)'])
+        ws.append(['- leave_with_pay_days (numeric)', '- loans (numeric)'])
     return output.getvalue()
 
 def main():
