@@ -86,7 +86,12 @@ def process_payroll(df):
     max_monthly_days = 22  # Cap for monthly salary calculation
     
     # Fill NaN values with 0 for numeric columns
-    numeric_cols = ['basic_salary', 'allowances', 'days_worked', 'overtime_hours', 'late_minutes', 'absent_days', 'leave_with_pay_days', 'loans']
+    numeric_cols = [
+        'basic_salary', 'allowances', 'days_worked',
+        'regular_overtime_hours', 'rest_day_overtime_hours',
+        'holiday_overtime_hours', 'special_holiday_overtime_hours',
+        'late_minutes', 'absent_days', 'leave_with_pay_days', 'loans'
+    ]
     df[numeric_cols] = df[numeric_cols].fillna(0)
     
     for _, row in df.iterrows():
@@ -95,7 +100,10 @@ def process_payroll(df):
             basic = float(row.get('basic_salary', 0))
             allowances = float(row.get('allowances', 0))
             days_worked = min(float(row.get('days_worked', 22)), max_monthly_days)  # Cap at 22
-            overtime_hours = float(row.get('overtime_hours', 0))
+            regular_overtime_hours = float(row.get('regular_overtime_hours', 0))
+            rest_day_overtime_hours = float(row.get('rest_day_overtime_hours', 0))
+            holiday_overtime_hours = float(row.get('holiday_overtime_hours', 0))
+            special_holiday_overtime_hours = float(row.get('special_holiday_overtime_hours', 0))
             late_minutes = float(row.get('late_minutes', 0))
             absent_days = float(row.get('absent_days', 0))
             leave_with_pay_days = float(row.get('leave_with_pay_days', 0))
@@ -108,17 +116,35 @@ def process_payroll(df):
             # Absent deduction
             absent_deduction = daily_rate * absent_days
             
-            # Overtime pay
+            # Overtime pay calculations
             hourly_rate = daily_rate / 8
-            overtime_rate = hourly_rate * 1.25
-            overtime_pay = overtime_rate * overtime_hours
+            
+            # Regular day overtime: 125%
+            regular_overtime_rate = hourly_rate * 1.25
+            regular_overtime_pay = regular_overtime_rate * regular_overtime_hours
+            
+            # Rest day overtime: 130% * 130%
+            rest_day_overtime_rate = hourly_rate * 1.30 * 1.30
+            rest_day_overtime_pay = rest_day_overtime_rate * rest_day_overtime_hours
+            
+            # Regular holiday overtime: 200% * 130%
+            holiday_overtime_rate = hourly_rate * 2.00 * 1.30
+            holiday_overtime_pay = holiday_overtime_rate * holiday_overtime_hours
+            
+            # Special holiday overtime: 130% * 130%
+            special_holiday_overtime_rate = hourly_rate * 1.30 * 1.30
+            special_holiday_overtime_pay = special_holiday_overtime_rate * special_holiday_overtime_hours
+            
+            # Total overtime pay
+            total_overtime_pay = (regular_overtime_pay + rest_day_overtime_pay +
+                                holiday_overtime_pay + special_holiday_overtime_pay)
             
             # Late deduction
             minute_rate = hourly_rate / 60
             late_deduction = minute_rate * late_minutes
             
             # Gross pay (adjusted for absent days, leave with pay does not deduct)
-            gross = adjusted_basic + allowances + overtime_pay - late_deduction - absent_deduction
+            gross = adjusted_basic + allowances + total_overtime_pay - late_deduction - absent_deduction
             
             # Government contributions
             sss = calculate_sss(basic)
@@ -146,7 +172,11 @@ def process_payroll(df):
             
             results.append({
                 **row.to_dict(),
-                'Overtime Pay': round(overtime_pay, 2),
+                'Regular Overtime Pay': round(regular_overtime_pay, 2),
+                'Rest Day Overtime Pay': round(rest_day_overtime_pay, 2),
+                'Holiday Overtime Pay': round(holiday_overtime_pay, 2),
+                'Special Holiday Overtime Pay': round(special_holiday_overtime_pay, 2),
+                'Total Overtime Pay': round(total_overtime_pay, 2),
                 'Late Deduction': round(late_deduction, 2),
                 'Absent Deduction': round(absent_deduction, 2),
                 'Gross Salary': round(gross, 2),
@@ -182,7 +212,10 @@ def generate_template():
         'basic_salary': [25000, 35000],
         'allowances': [5000, 8000],
         'days_worked': [22, 22],
-        'overtime_hours': [0, 0],
+        'regular_overtime_hours': [0, 0],
+        'rest_day_overtime_hours': [0, 0],
+        'holiday_overtime_hours': [0, 0],
+        'special_holiday_overtime_hours': [0, 0],
         'late_minutes': [0, 0],
         'absent_days': [0, 0],
         'leave_with_pay_days': [0, 0],
@@ -197,7 +230,9 @@ def generate_template():
         ws = writer.book['Instructions']
         ws.append(['Required Fields:'])
         ws.append(['- employee_id', '- full_name', '- basic_salary (numeric)'])
-        ws.append(['- allowances (numeric)', '- days_worked (numeric)', '- overtime_hours (numeric)'])
+        ws.append(['- allowances (numeric)', '- days_worked (numeric)'])
+        ws.append(['- regular_overtime_hours (numeric)', '- rest_day_overtime_hours (numeric)'])
+        ws.append(['- holiday_overtime_hours (numeric)', '- special_holiday_overtime_hours (numeric)'])
         ws.append(['- late_minutes (numeric)', '- absent_days (numeric)'])
         ws.append(['- leave_with_pay_days (numeric)', '- loans (numeric)'])
     return output.getvalue()
